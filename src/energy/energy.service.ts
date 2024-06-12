@@ -9,6 +9,8 @@ import { Energy, EnergySchema } from "src/Schemas/energy.schema";
 export class EnergyService{
   constructor(@InjectModel(Energy.name) private energyModel:Model<Energy>){}
 
+//Getting the total energy of last 12 Months
+
   async getEnergybylast12months():Promise<any>{
     const twelvemonthago = new Date();
     twelvemonthago.setMonth(twelvemonthago.getMonth() - 12)
@@ -33,6 +35,9 @@ export class EnergyService{
       totalEnergyProduced: month.totalEnergyProduced
     }));
   }
+
+//Getting the tottal energy of previous 1 hour within the margin of 15 15 minutes
+
   async Getenrgyproducedbylasthour(): Promise<any>{
     const now = new Date();
     const onehourago = new Date(now.getTime()-60*60*1000);
