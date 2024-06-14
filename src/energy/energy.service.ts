@@ -1,76 +1,37 @@
-import { Injectable } from "@nestjs/common/interfaces";
-import { InjectModel } from "@nestjs/mongoose";
-import { promises } from "dns";
-import { Model } from "mongoose";
-import { interval } from "rxjs";
-import { Energy, EnergySchema } from "src/Schemas/energy.schema";
+import { Injectable } from '@nestjs/common';
+import { InjectRedis} from '@nestjs-modules/ioredis';
+import { DateTime } from 'luxon';
+import { Redis } from 'ioredis'
 
+@Injectable()
+export class EnergyService {
+  constructor(@InjectRedis() private readonly redis: Redis) {}
 
-export class EnergyService{
-  constructor(@InjectModel(Energy.name) private energyModel:Model<Energy>){}
-
-//Getting the total energy of last 12 Months
-
-  async getEnergybylast12months():Promise<any>{
-    const twelvemonthago = new Date();
-    twelvemonthago.setMonth(twelvemonthago.getMonth() - 12)
-    const result = await this.energyModel.aggregate([
-      {
-        $match: {
-          startTime: { $gte: twelvemonthago }
-        }
-      },
-      {
-        $group: {
-          _id: { $month: "$startTime" },
-          totalEnergyProduced: { $sum: "$energyProducedWatt" }
-        }
-      },
-      {
-        $sort: { "_id": 1 }
-      }
-    ]);
-    return result.map(month => ({
-      month: month._id,
-      totalEnergyProduced: month.totalEnergyProduced
-    }));
+  async getEnergybylast12months(): Promise<any> {
+    const result = [];
+    const now = DateTime.now();
+    for (let i = 0; i < 12; i++) {
+      const month = now.minus({ months: i }).toFormat('yyyy-MM');
+      const totalEnergyProduced = await this.redis.get(`energy:${month}`);
+      result.push({
+        month,
+        totalEnergyProduced: totalEnergyProduced ? parseFloat(totalEnergyProduced) : 0,
+      });
+    }
+    return result.reverse();
   }
 
-//Getting the tottal energy of previous 1 hour within the margin of 15 15 minutes
-
-  async Getenrgyproducedbylasthour(): Promise<any>{
-    const now = new Date();
-    const onehourago = new Date(now.getTime()-60*60*1000);
-
-    const result = await this.energyModel.aggregate([
-      {
-        $match:{
-          startTime:{$gte : onehourago , $lte : now}
-
-        }
-      },
-      {
-        $bucket : {
-          groupBy : "$startTime",
-          boundaries:[
-            onehourago,
-            new Date(onehourago.getTime()+15*60*1000),
-            new Date(onehourago.getTime()+30*60*1000),
-            new Date(onehourago.getTime()+45*60*1000),
-            now
-          ],
-          default : 'other',
-          output:{
-            totalEnergyProduced : {$sum:'$energyProducedWatt'}
-          }
-
-        }
-      }
-    ]);
-    return result.filter(bucket => bucket._id! == "other").map(bucket => ({
-      intervalStart : bucket._id,
-      totalEnergyProduced:bucket.totalEnergyProduced
-    
-    }));
+  async Getenrgyproducedbylasthour(): Promise<any> {
+    const now = DateTime.now();
+    const intervals = [];
+    for (let i = 0; i < 4; i++) {
+      const intervalStart = now.minus({ minutes: (i + 1) * 15 }).toISO();
+      const totalEnergyProduced = await this.redis.get(`energy:${intervalStart}`);
+      intervals.push({
+        intervalStart,
+        totalEnergyProduced: totalEnergyProduced ? parseFloat(totalEnergyProduced) : 0,
+      });
+    }
+    return intervals.reverse();
   }
 }
